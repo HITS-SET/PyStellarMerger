@@ -1,0 +1,9 @@
+[build-system]
+requires = [
+    "setuptools >= 64",
+        "numpy",
+        "scipy",
+        "numba",
+        "mesa_reader"
+    ]
+build-backend = "setuptools.build_meta"

@@ -1,0 +1,16 @@
+09/09/2025 17:13:08
+
+Primary: /Users/heller/Documents/Programs/PyStellarMerger/tests/primary.data
+Secondary: /Users/heller/Documents/Programs/PyStellarMerger/tests/secondary.data
+Chemical species: h1, he3, he4, c12, n14, o16
+Desired shells: 10000
+Perform shock heating: True
+Shock heating modification factor: 1.0
+Mix model: False
+Remesh model: True
+Number of remeshing shells: 100
+Constant mass loss: False
+Mass loss fraction: 0.09136879564880736
+Generate relaxation profiles: True
+Output folder: /Users/heller/Documents/Programs/PyStellarMerger/tests/example_output
+Time taken: 01:29 minutes
