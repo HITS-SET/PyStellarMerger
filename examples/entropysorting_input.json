@@ -1,0 +1,22 @@
+{
+    "primary_star": "primary.data",
+    "secondary_star": "secondary.data",
+    "output_raw": true,
+    "enable_remeshing": true,
+    "remeshing_shells": 110,
+    "enable_mixing": true,
+    "mixing_shells": 200,
+    "relaxation_profiles": true,
+    "chemical_species": [
+        "h1",
+        "he3",
+        "he4",
+        "c12",
+        "n14",
+        "o16"
+    ],
+    "fill_missing_species": false,
+    "massloss_fraction": 0.05,
+    "output_dir": "entropysorting_output/",
+    "output_diagnostics": true
+}

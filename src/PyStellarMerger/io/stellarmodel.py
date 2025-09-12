@@ -53,7 +53,7 @@ class model:
         """
         return (np.all(self.mass == other.mass) and np.all(self.density == other.density) and np.all(self.temperature == other.temperature) and np.all(self.elements == other.elements))
     
-    def read_mesa_profile(self, filename, fill_missing_species=False):
+    def read_mesa_profile(self, filename, fill_missing_species=False, load_entropy=False):
         """
         filename: Path to file to be read.
         This function uses MESA reader to read a stellar model from a MESA profile.
@@ -105,9 +105,17 @@ class model:
         for i, element in enumerate(self.element_names):
             self.elements[i] = np.flip(getattr(mesa_model, element))
 
+        if load_entropy:  # In case we are loading a model for entropy sorting, also load the specific entropy profile
+            if "logS" in column_names:  # If log(specific entropy) is in profiles, use it directly
+                self.entropy = 10**np.flip(mesa_model.logS)
+            elif "entropy" in column_names:
+                self.entropy = uN_A*uK*np.flip(mesa_model.entropy)
+            else:
+                raise ValueError("Neither 'logS' nor 'entropy' found in profile files. Cannot compute specific entropy.")
+
         return None
     
-    def read_basic(self, filename, load_merger_product=False):
+    def read_basic(self, filename, fill_missing_species=False, load_merger_product=False, load_entropy=False):
         """
         filename: Path to file to be read.
         This function reads from the "basic" file format specified in the example stellar model files.
@@ -123,22 +131,33 @@ class model:
         needed_quantities = ["mass", "dm", "radius", "density", "pressure", "temperature", "mean_mu"]
         needed_columns = np.append(needed_quantities, self.element_names)
 
-        if set(needed_columns).issubset(column_names): # Check if all of the required quantities are available in the file
+        if set(needed_quantities).issubset(column_names): # Check if all of the required quantities are available in the file
             for col in needed_quantities:
                 idx = np.argwhere(column_names == col)[0] # Get position of the column in the input file for loading
                 columndata = np.loadtxt(filename, unpack=True, skiprows=comment_lines+1, dtype=float, usecols=idx)
                 setattr(self, col, columndata)
 
+            # Set various needed variables
             self.n_shells = len(self.mass)
             self.star_mass = self.mass[-1]
             self.star_radius = self.radius[-1]
             self.id = np.arange(0, self.n_shells, 1)
+            self.buoyancy = np.zeros(self.n_shells)
+            self.e_thermal = np.zeros(self.n_shells)
+            self.beta = np.zeros(self.n_shells)
 
             self.elements = np.zeros((len(self.element_names), self.n_shells))
             for i, el in enumerate(self.element_names): # Load mass fraction profiles for all elements
-                idx = np.argwhere(column_names == el)[0] # Get position of the current element's column
-                columndata = np.loadtxt(filename, unpack=True, skiprows=comment_lines+1, dtype=float, usecols=idx)
-                self.elements[i] = columndata
+                idx = np.argwhere(column_names == el) # Get position of the current element's column
+                if idx.size > 0:
+                    columndata = np.loadtxt(filename, unpack=True, skiprows=comment_lines+1, dtype=float, usecols=idx[0])
+                    self.elements[i] = columndata
+                else:
+                    if not fill_missing_species:
+                        raise Exception(f"Error, missing element: {el}")
+                    else:
+                        print(f"Warning, missing element: {el}. Setting abundances to zero.")
+                        self.elements[i] = np.zeros(self.n_shells)
 
         else:
             missing_columns = [x for x in needed_columns if x not in column_names]
@@ -147,6 +166,16 @@ class model:
         if load_merger_product: # In case we are loading from a completed merger, also load the passive scalar profile
             idx = np.argwhere(column_names == "passive_scalar")[0]
             self.passive_scalar = np.loadtxt(filename, unpack=True, skiprows=comment_lines+1, dtype=float, usecols=idx)
+
+        if load_entropy:  # In case we are loading a model for entropy sorting, also load the specific entropy profile
+            if "logS" in column_names:  # If log(specific entropy) is in profiles, use it directly
+                idx = np.argwhere(column_names == "logS")[0]
+                self.entropy = 10**np.loadtxt(filename, unpack=True, skiprows=comment_lines+1, dtype=float, usecols=idx[0])
+            elif "entropy" in column_names:
+                idx = np.argwhere(column_names == "entropy")[0]
+                self.entropy = uN_A*uK*np.loadtxt(filename, unpack=True, skiprows=comment_lines+1, dtype=float, usecols=idx[0])
+            else:
+                raise ValueError("Neither 'logS' nor 'entropy' found in input files. Cannot load specific entropy.")
 
         return None
     

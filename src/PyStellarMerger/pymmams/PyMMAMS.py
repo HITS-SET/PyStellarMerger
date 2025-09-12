@@ -154,8 +154,8 @@ def main():
         model_a.read_mesa_profile(primary_file, fill_missing_species)
         model_b.read_mesa_profile(secondary_file, fill_missing_species)
     elif primary_file[-4::] == ".txt": # If the input models are in the simple column format, use our basic loading function
-        model_a.read_basic(primary_file)
-        model_b.read_basic(secondary_file)
+        model_a.read_basic(primary_file, fill_missing_species)
+        model_b.read_basic(secondary_file, fill_missing_species)
     else:
         print("Unknown progenitor file format, quit.")
         exit(0)

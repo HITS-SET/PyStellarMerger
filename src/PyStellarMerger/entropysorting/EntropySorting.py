@@ -9,6 +9,9 @@ import json
 import pickle
 from collections import defaultdict
 from datetime import datetime
+from PyStellarMerger.io import stellarmodel
+from PyStellarMerger.calc.massloss import mass_loss
+import importlib.resources
 
 def read_input(infile):
     """
@@ -22,8 +25,6 @@ def read_input(infile):
             'remeshing_shells': 110, 
             'enable_mixing': False, 
             'mixing_shells': 200, 
-            'enable_smoothing': True, 
-            'smoothing_box': 4,
             'relaxation_profiles': True, 
             'chemical_species': ['h1', 'he3', 'he4', 'c12', 'n14', 'o16'], 
             'fill_missing_species': False,
@@ -44,9 +45,6 @@ def read_input(infile):
     if not isinstance(parameters["mixing_shells"], int) or parameters["mixing_shells"] < 0:
         raise ValueError("mixing_shells must be an integer > 0.")
     
-    if not isinstance(parameters["smoothing_box"], int) or parameters["smoothing_box"] < 0:
-        raise ValueError("smoothing_box must be an integer > 0.")
-    
     if not (isinstance(parameters["massloss_fraction"], float) or isinstance(parameters["massloss_fraction"], int)) or parameters["massloss_fraction"] >= 1.0 or parameters["massloss_fraction"] < 0.0:
         raise ValueError("massloss_fraction must be < 1.0 and >= 0.0.")
     
@@ -56,8 +54,7 @@ def get_amass(chemical_species):
     """
     Gets the atomic masses of all chemical species from the isotopes.pickle file.
     """
-    #with open(f"{os.path.dirname(os.path.realpath(__file__))}/isotopes.pkl", "rb") as f:
-    with open(f"data/isotopes.pkl", "rb") as f:
+    with importlib.resources.files("PyStellarMerger.data").joinpath("isotopes.pkl").open("rb") as f:
         isotopes = pickle.load(f)
         amass = np.array([(1+float(isotopes[iso][1]))/float(isotopes[iso][0]) for iso in chemical_species])
 
@@ -79,62 +76,14 @@ def new_star(m, s, t, rho, comp, ps):
     return dm_res, s_res, t_res, rho_res, comp_res, ps_res
 
 
-def mLoss_smooth(mres, sres, ele, sor, m_total, m_loss, box):
-    """
-    Smoothing function for entropy-sorting merger product, originally written by Tina Neumann (2022). 
-    Does not perfectly conserve total masses of elements, but is capable of producing profiles with higher resolution in mass coordinate.
-    """
-    m_sm = []
-    s_sm = []
-    ele_sm = []
-    ratio = []
-    limit = True
-
-    # print(f"Number of shells before smoothing: {len(mres)}. Box = {box}")
-    for m in range(len(mres)):  # normal starting from 0 (surface) to 1 (core)
-        if mres[m] >= ((m_total - m_loss) / m_total) and m != 0 and limit == True:
-            m_max = ((m_total - m_loss) / m_total)  # mass at surface shell
-            n = m % box  # how many values left?
-            # ratio where to find the maximal mass
-            rat = (mres[m] - m_max) / (mres[m] - mres[m - n])  # fix: mres[m-1]
-            # print(m,n,m_res[m:m],np.divide(list(mres[int(m-n):m])+[mres[m-1]]+[m_max],m_max))
-            # redefined the reduced arrays + the fraction of the last value
-            m_sm.append(m_max)  # /m_total #(mres[m-1]+(mres[m]-mres[m-1])*rat)
-            s_sm.append(np.average(np.append(sres[int(m - n):m], [(sres[m - 1] + (sres[m] - sres[m - 1]) * rat)]),
-                                   weights=np.divide(list(mres[int(m - n):m]) + [m_max], m_max)))
-            ratio.append(np.average(np.append(sor[int(m - n):m], [(sor[m - 1] + (sor[m] - sor[m - 1]) * rat)]),
-                                    weights=np.divide(list(mres[int(m - n):m]) + [m_max], m_max)))
-            for c in range(len(ele)):
-                try:
-                    ele_sm[c].append(
-                        np.average(ele[c][int(m - n):m] + [ele[c][m - 1] + (ele[c][m] - ele[c][m - 1]) * rat],
-                                   weights=np.divide(list(mres[int(m - n):m]) + [m_max], m_max)))
-                except:
-                    ele_sm.append([np.average(ele[c][int(m - n):m], weights=np.divide(mres[int(m - n):m], mres[m - 1]))])
-            limit = False
-        if mres[m] > ((m_total - m_loss) / m_total) and m != 0 and m % box == 0.:  # fix: (1-m_loss)
-            m_sm.append(mres[m - 1])
-            s_sm.append(np.average(sres[int(m - box):m], weights=np.divide(mres[int(m - box):m], mres[m - 1])))
-            ratio.append(np.average(sor[int(m - box):m], weights=np.divide(mres[int(m - box):m], mres[m - 1])))
-            for c in range(len(ele)):
-                try:
-                    # mass weighted averages
-                    ele_sm[c].append(np.average(ele[c][int(m - box):m], weights=np.divide(mres[int(m - box):m], mres[m - 1])))
-                except:
-                    ele_sm.append([np.average(ele[c][int(m - box):m], weights=np.divide(mres[int(m - box):m], mres[m - 1]))])
-
-    # print('Stops because of mass loss at mass of:', m_loss)
-    return np.array(m_sm), np.array(s_sm), np.array(ele_sm), np.array(ratio)
-
-
 def mloss_remesh(dm, elements, X, mu, ps, density, s_tot, n_shells, f_ml, amass):
     """
     The same remeshing scheme as in PyMMAMS (remesh_func in remeshing.py). 
     This function additionally applies mass loss before remeshing by removing the mass from the surface.
     We also do not separate "single-" and "double-valued" regions, because ES tends to produce less distinct transitions between regions of different origin (primary vs. secondary).
     """
-    msol = 1.9892e33
-    dm /= msol  # Convert dm from grams to msun
+    # msol = 1.9892e33
+    # dm /= msol  # Convert dm from grams to msun
     mass = np.cumsum(dm)
     last_mass = mass
     dm_lim = mass[-1]/n_shells
@@ -332,8 +281,6 @@ def main():
     n_remesh = parameters["remeshing_shells"]
     mixing = parameters["enable_mixing"]
     n_mix = parameters["mixing_shells"]
-    smooth = parameters["enable_smoothing"]
-    box = parameters["smoothing_box"]
     relaxation_profiles = parameters["relaxation_profiles"]
     mass_loss_fraction = parameters["massloss_fraction"]
     output_folder = os.path.abspath(parameters["output_dir"])
@@ -350,9 +297,6 @@ def main():
     print(f"Perform mixing: {mixing}")
     if mixing:
         print(f"Number of mixing shells: {n_mix}")
-    print(f"Perform smoothing: {smooth}")
-    if smooth:
-        print(f"Smoothing range: {box}")
     print(f"Chemical species: {', '.join(str(i) for i in chemical_species)}")
     print(f"Fill missing species with zero abundance: {fill_missing_species}")
     print(f"Fractional mass loss: {mass_loss_fraction}")
@@ -370,58 +314,46 @@ def main():
             print("Could not find parent directory of output folder. Quit.")
             exit(1)
 
-    primary = mr.MesaData(primary_file)
-    secondary = mr.MesaData(secondary_file)
+    model_a = stellarmodel.model(chemical_species)
+    model_b = stellarmodel.model(chemical_species)
 
-    # Check that all requested chemical species are present in both profiles
-    missing_elements_primary = [x for x in chemical_species if x not in primary.bulk_names]
-    missing_elements_secondary = [x for x in chemical_species if x not in secondary.bulk_names]
-
-    if (len(missing_elements_primary) > 0 or len(missing_elements_secondary) > 0) and not fill_missing_species:
-        raise ValueError(f"The following chemical species are missing in the primary profile: {', '.join(str(i) for i in missing_elements_primary)}\nThe following chemical species are missing in the secondary profile: {', '.join(str(i) for i in missing_elements_secondary)}\nEither add them to the profiles or set 'fill_missing_species' to true in the input file.")
+    # Check if input files are .txt or profile, then read the models.
+    if primary_file[-5::] == ".data" or primary_file[-8::] == ".data.gz": # If the input files are (gzipped) MESA models, use MESA reader to load the stars
+        model_a.read_mesa_profile(primary_file, fill_missing_species, load_entropy=True)
+        model_b.read_mesa_profile(secondary_file, fill_missing_species, load_entropy=True)
+    elif primary_file[-4::] == ".txt": # If the input models are in the simple column format, use our basic loading function
+        model_a.read_basic(primary_file, fill_missing_species, load_entropy=True)
+        model_b.read_basic(secondary_file, fill_missing_species, load_entropy=True)
     else:
-        for elem in missing_elements_primary:
-            print(f"Warning: Chemical species '{elem}' not found in primary profile. Filling with zero abundance.")
-            setattr(primary, elem, np.zeros(len(primary.mass)))
+        print("Unknown progenitor file format, quit.")
+        exit(0)
 
-        for elem in missing_elements_secondary:
-            print(f"Warning: Chemical species '{elem}' not found in secondary profile. Filling with zero abundance.")
-            setattr(secondary, elem, np.zeros(len(secondary.mass)))
+    if mass_loss_fraction < 0.0: # If mass loss fraction is negative, use MMAMS prescription
+        mass_loss_fraction = mass_loss(model_a.star_mass, model_b.star_mass, do_const=False)
 
-    m_total = primary.mass[0] + secondary.mass[0]
-    m_loss = m_total*(1 - mass_loss_fraction)  # Mass after mass loss has been applied
     # Load quantities needed for merger
-    dm = np.append(primary.dm, secondary.dm)
-    if "logS" in primary.bulk_names:  # If log(specific entropy) is in profiles, use it directly
-        s_tot = np.append(10**primary.logS, 10**secondary.logS)  # logS = log10(specific entropy)
-    elif "entropy" in primary.bulk_names:  # If only "entropy" = specific entropy / (avo*kerg) is in profiles, calculate specific entropy
-        avo = 6.02214179e23  # Avogadro constant
-        kerg = 1.3806504e-16  # Boltzmann constant
-        s_tot = np.append(primary.entropy*avo*kerg, secondary.entropy*avo*kerg)
-    else:
-        raise ValueError("Neither 'logS' nor 'entropy' found in profile files. Cannot compute specific entropy.")
-    
-    T = np.append(primary.T, secondary.T)
-    Rho = np.append(primary.Rho, secondary.Rho)
+    dm = np.append(model_a.dm, model_b.dm)
+    s_tot = np.append(model_a.entropy, model_b.entropy)
+
+    T = np.append(model_a.temperature, model_b.temperature)
+    Rho = np.append(model_a.density, model_b.density)
 
     amass = get_amass(chemical_species)
 
-    comp_tot = np.zeros((len(chemical_species), int(primary.num_zones+secondary.num_zones)))
+    comp_tot = np.zeros((len(chemical_species), int(model_a.n_shells+model_b.n_shells)))
 
     for i, species in enumerate(chemical_species):
-        comp_tot[i, :] = np.append(getattr(primary, species), getattr(secondary, species))
+        comp_tot[i, :] = np.append(model_a.elements[i],model_b.elements[i])
 
     # Define a passive scalar, 1 for shells from primary, 0 for secondary
-    ps = np.append(np.full(primary.num_zones, 1), np.full(secondary.num_zones, 0))
+    ps = np.append(np.full(model_a.n_shells, 1), np.full(model_b.n_shells, 0))
 
     # Merge stars using entropy sorting
     dm_res, s_res, t_res, rho_res, ele, ps_res = new_star(dm, s_tot, T, Rho, comp_tot, ps)
-    m_res = np.cumsum(dm_res)  # Convert sorted dm back into proper mass coordinate
-    msol = 1.9892e33
-    m_res_rel = np.divide(np.cumsum(dm_res), np.max(m_res))  # Mass recalibrated to range 0 to 1
+    m_res = np.cumsum(dm_res) # Convert sorted dm back into proper mass coordinate
 
     if rawmod:
-        write_merger(m_res/msol, dm_res/msol, ele, chemical_species, ps_res, rho_res, s_res, compute_mu(ele, amass), os.path.join(output_folder, "Ssorted_merger_raw.txt"))
+        write_merger(m_res, dm_res, ele, chemical_species, ps_res, rho_res, s_res, compute_mu(ele, amass), os.path.join(output_folder, "Ssorted_merger_raw.txt"))
         if relaxation_profiles:
             write_composition_profile(m_res, ele, os.path.join(output_folder, "Ssorted_merger_composition_raw.dat"))
             write_entropy_profile(m_res, s_res, os.path.join(output_folder, "Ssorted_merger_entropy_raw.dat"))
@@ -436,16 +368,6 @@ def main():
         if relaxation_profiles:
             write_composition_profile(m_resr, eler, os.path.join(output_folder, "Ssorted_merger_composition_r.dat"))
             write_entropy_profile(m_resr, s_resr, os.path.join(output_folder, "Ssorted_merger_entropy_r.dat"))
-
-    if smooth:
-        print("Smoothing ...")
-        m_resm, s_resm, elem, sor = mLoss_smooth(m_res_rel, s_res, ele, ps_res, m_total, m_loss, box)
-        m_new = np.multiply(m_resm, m_loss)  # Mass rescaled back to actual solar masses
-        # TODO: Write smoothed model
-        print("Done!")
-        if relaxation_profiles:
-            write_composition_profile(m_resm, elem, os.path.join(output_folder, "Ssorted_merger_composition_s.dat"))
-            write_entropy_profile(m_resm, s_resm, os.path.join(output_folder, "Ssorted_merger_entropy_s.dat"))
     
 
     if diagnostics:
@@ -460,9 +382,6 @@ def main():
             f.write(f"Mixing: {mixing}\n")
             if mixing:
                 f.write(f"Number of shells after mixing: {n_mix}\n")
-            f.write(f"Smoothing: {smooth}\n")
-            if smooth:
-                f.write(f"Smoothing range: {box}\n")
             f.write(f"Chemical species: {', '.join(str(i) for i in chemical_species)}\n")
             f.write(f"Mass loss fraction: {mass_loss_fraction}\n")
             f.write(f"Output relaxation profiles: {relaxation_profiles}\n")

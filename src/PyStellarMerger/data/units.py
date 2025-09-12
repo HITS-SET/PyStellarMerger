@@ -12,8 +12,8 @@ uGS = 1
 uAM = 1
 
 # Derived units
-uMSUN = 1.981e33 * uGR
-uRSUN = 6.9599e10 * uCM
+uMSUN = 1.9892e33 * uGR
+uRSUN = 6.9598e10 * uCM
 uLSUN = 3.826e33 * uERG/uSEC
 uC = 2.997924800e10 * uCM/uSEC
 uG = 6.67259e-8 * uCM*uCM*uCM/uGR/uSEC

@@ -1,10 +1,12 @@
 from PyStellarMerger.pymmams import PyMMAMS
 from PyStellarMerger.io import stellarmodel
 from PyStellarMerger.pymmams.mmas import mmas
+from PyStellarMerger.entropysorting.EntropySorting import compute_mu
 from PyStellarMerger.calc.computeenergy import compute_stellar_energy
 from PyStellarMerger.calc.massloss import mass_loss
 from PyStellarMerger.remeshing.mixing import mixing_product
 from PyStellarMerger.remeshing.remeshing import mix_separately
+from PyStellarMerger.entropysorting.EntropySorting import new_star, write_merger, write_composition_profile, write_entropy_profile, mloss_remesh
 import os
 import numpy as np
 from collections import defaultdict
@@ -12,19 +14,18 @@ from collections import defaultdict
 class StellarMerger:
     def __init__(self, parameters):
         self.parameters = parameters
-        print(self.parameters)
         self.validateInput()
 
         # Load the progenitor stars
         self.model_a = stellarmodel.model(self.parameters["chemical_species"])
         self.model_b = stellarmodel.model(self.parameters["chemical_species"])
 
-        if self.parameters["primary_star"][-5::] == ".data" or self.parameters["primary_star"][-8::] == ".data.gz": # If the input files are (gzipped) MESA models, use MESA reader to load the stars
-            self.model_a.read_mesa_profile(self.parameters["primary_star"], self.parameters["fill_missing_species"])
-            self.model_b.read_mesa_profile(self.parameters["secondary_star"], self.parameters["fill_missing_species"])
-        elif self.parameters["primary_star"][-4::] == ".txt": # If the input models are in the simple column format, use our basic loading function
-            self.model_a.read_basic(self.parameters["primary_star"])
-            self.model_b.read_basic(self.parameters["secondary_star"])
+        if self.parameters["primary_star"][-5::] == ".data": 
+            self.model_a.read_mesa_profile(self.parameters["primary_star"], self.parameters["fill_missing_species"], load_entropy=True)
+            self.model_b.read_mesa_profile(self.parameters["secondary_star"], self.parameters["fill_missing_species"], load_entropy=True)
+        elif self.parameters["primary_star"][-4::] == ".txt": 
+            self.model_a.read_basic(self.parameters["primary_star"], self.parameters["fill_missing_species"], load_entropy=True)
+            self.model_b.read_basic(self.parameters["secondary_star"], self.parameters["fill_missing_species"], load_entropy=True)
         else:
             print("Unknown progenitor file format, quit.")
             exit(1)
@@ -32,8 +33,6 @@ class StellarMerger:
         # Set passive scalar of primary and secondary progenitor
         self.model_a.passive_scalar = np.ones(self.model_a.n_shells)  # Primary: Passive scalar = 1
         self.model_b.passive_scalar = np.zeros(self.model_b.n_shells)  # Secondary: Passive scalar = 0
-
-
 
     def validateInput(self):
         """
@@ -49,11 +48,12 @@ class StellarMerger:
         defaults = {
                 'primary_star': 'primary.data', 
                 'secondary_star': 'secondary.data', 
-                'n_target_shells': 10000, 
+                'n_target_shells': 10000,
+                'output_raw': True, 
                 'enable_mixing': False, 
                 'mixing_shells': 200, 
                 'enable_remeshing': True, 
-                'remeshing_shells': 110, 
+                'remeshing_shells': 100, 
                 'enable_shock_heating': True, 
                 'f_mod': 1.0, 
                 'relaxation_profiles': True, 
@@ -71,6 +71,7 @@ class StellarMerger:
 
         # Update parameters with provided input
         merger_params.update(self.parameters)
+        self.parameters = dict(merger_params)
 
         # Validate some input parameters:
         if not isinstance(self.parameters["n_target_shells"], int) or self.parameters["n_target_shells"] < 0:
@@ -143,3 +144,53 @@ class StellarMerger:
 
         print("PyMMAMS merger done.")
 
+    def EntropySorting(self):
+        # Load quantities needed for merger
+        dm = np.append(self.model_a.dm, self.model_b.dm)
+        s_tot = np.append(self.model_a.entropy, self.model_b.entropy)
+
+        T = np.append(self.model_a.temperature, self.model_b.temperature)
+        Rho = np.append(self.model_a.density, self.model_b.density)
+
+        # amass = get_amass(self.parameters["chemical_species"])
+
+        comp_tot = np.zeros((len(self.parameters["chemical_species"]), int(self.model_a.n_shells+self.model_b.n_shells)))
+
+        for i, species in enumerate(self.parameters["chemical_species"]):
+            comp_tot[i, :] = np.append(self.model_a.elements[i],self.model_b.elements[i])
+
+        # Define a passive scalar, 1 for shells from primary, 0 for secondary
+        ps = np.append(np.full(self.model_a.n_shells, 1), np.full(self.model_b.n_shells, 0))
+
+        # Merge stars using entropy sorting
+        dm_res, s_res, t_res, rho_res, ele, ps_res = new_star(dm, s_tot, T, Rho, comp_tot, ps)
+        m_res = np.cumsum(dm_res) # Convert sorted dm back into proper mass coordinate
+
+        if self.parameters["output_raw"]:
+            write_merger(m_res, dm_res, ele, self.parameters["chemical_species"], ps_res, rho_res, s_res, compute_mu(ele, self.model_a.am), os.path.join(self.parameters["output_dir"], "Ssorted_merger_raw.txt"))
+            if self.parameters["relaxation_profiles"]:
+                write_composition_profile(m_res, ele, os.path.join(self.parameters["output_dir"], "Ssorted_merger_composition_raw.dat"))
+                write_entropy_profile(m_res, s_res, os.path.join(self.parameters["output_dir"], "Ssorted_merger_entropy_raw.dat"))
+
+        if self.parameters["enable_remeshing"]:
+            print("Remeshing ...")
+            mean_mu = compute_mu(ele, self.model_a.am)
+            m_resr, dmr, eler, psr, rho_resr, s_resr, mu_resr = mloss_remesh(dm_res, ele, ele[np.argwhere(np.array(self.parameters["chemical_species"]) == "h1")[0][0]], mean_mu, ps_res, rho_res, s_res, self.parameters["remeshing_shells"], self.parameters["mass_loss_fraction"], self.model_a.am)
+            # Write remeshed model
+            write_merger(m_resr, dmr, eler, self.parameters["chemical_species"], psr, rho_resr, s_resr, mu_resr, os.path.join(self.parameters["output_dir"], "Ssorted_merger_remeshed.txt"))
+            print("Done!")
+            if self.parameters["relaxation_profiles"]:
+                write_composition_profile(m_resr, eler, os.path.join(self.parameters["output_dir"], "Ssorted_merger_composition_r.dat"))
+                write_entropy_profile(m_resr, s_resr, os.path.join(self.parameters["output_dir"], "Ssorted_merger_entropy_r.dat"))
+
+        print("Entropy Sorting merger done.")
+    
+def main():
+    """
+    Main function to be called when running the script from the terminal.
+    """
+
+    print("Welcome to PyStellarMerger!")
+    print("Perform a merger by either choosing a direct entry point or by writing a Python script. See the README for details.")    
+
+    return None

@@ -1,0 +1,13 @@
+12/09/2025 14:52:28
+
+Primary: primary.data
+Secondary: secondary.data
+Write raw model: True
+Remeshing: True
+Number of shells after remeshing: 110
+Mixing: True
+Number of shells after mixing: 200
+Chemical species: h1, he3, he4, c12, n14, o16
+Mass loss fraction: 0.05
+Output relaxation profiles: True
+Output folder: entropysorting_output/

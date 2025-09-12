@@ -9,7 +9,9 @@ setup(
     packages=find_packages(where="src"),
     entry_points={
         'console_scripts': [
-            'pystellarmerger=PyStellarMerger.pymmams.PyMMAMS:main',  # Pointing to the main function
+            'pystellarmerger=PyStellarMerger.StellarMerger:main',
+            'pymmams=PyStellarMerger.pymmams.PyMMAMS:main',
+            'entropysorting=PyStellarMerger.entropysorting.EntropySorting:main',
         ],
     },
     include_package_data=True,

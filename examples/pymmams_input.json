@@ -1,0 +1,27 @@
+{
+    "primary_star": "primary.data",
+    "secondary_star": "secondary.data",
+    "n_target_shells": 10000,
+    "enable_mixing": false,
+    "mixing_shells": 200,
+    "enable_remeshing": true,
+    "remeshing_shells": 100,
+    "enable_shock_heating": true,
+    "f_mod": 1.0,
+    "relaxation_profiles": true,
+    "extrapolate_shock_heating": true,
+    "initial_buoyancy": true,
+    "final_buoyancy": true,
+    "chemical_species": [
+        "h1",
+        "he3",
+        "he4",
+        "c12",
+        "n14",
+        "o16"
+    ],
+    "fill_missing_species": false,
+    "massloss_fraction": -1.0,
+    "output_dir": "pymmams_output/",
+    "output_diagnostics": true
+}
