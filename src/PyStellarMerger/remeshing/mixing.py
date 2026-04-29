@@ -46,7 +46,7 @@ def mixing_product(n, model):
 
         Utot += compute_energy(unmixed_product.density[i], unmixed_product.temperature[i], unmixed_product.mean_mu[i]) * dm
 
-        if m_bin > dm_bin:
+        if m_bin > dm_bin or i == unmixed_product.n_shells - 1:
             mixed_product.id = np.append(mixed_product.id, j)
             mixed_product.dm = np.append(mixed_product.dm, m_bin)
             mixed_product.radius = np.append(mixed_product.radius, r_mean / n_in_bin)
