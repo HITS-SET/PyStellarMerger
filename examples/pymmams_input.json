@@ -2,7 +2,7 @@
     "primary_star": "primary.data",
     "secondary_star": "secondary.data",
     "n_target_shells": 10000,
-    "enable_mixing": false,
+    "enable_mixing": true,
     "mixing_shells": 200,
     "enable_remeshing": true,
     "remeshing_shells": 100,
