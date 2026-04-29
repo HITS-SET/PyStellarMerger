@@ -21,7 +21,7 @@ All dependencies are available on PyPI and will be installed automatically durin
 ## Installation
 We recommend to install the package in a separate Python environment. The package can be installed by first cloning the repository to a suitable location
 ```
-git clone git@github.com:HITS-SET/PyStellarMerger.git
+git clone https://github.com/HITS-SET/PyStellarMerger.git
 ```
 and then, while inside the `PyStellarMerger` directory, installing using `pip`:
 ```
