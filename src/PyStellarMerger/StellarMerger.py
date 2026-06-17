@@ -185,6 +185,47 @@ class StellarMerger:
 
         print("Entropy Sorting merger done.")
     
+    def DRaMA(self):
+        # Load quantities needed for merger
+        dm = np.append(self.model_a.dm, self.model_b.dm)
+        s_tot = np.append(self.model_a.entropy, self.model_b.entropy)
+
+        T = np.append(self.model_a.temperature, self.model_b.temperature)
+        Rho = np.append(self.model_a.density, self.model_b.density)
+
+        # amass = get_amass(self.parameters["chemical_species"])
+
+        comp_tot = np.zeros((len(self.parameters["chemical_species"]), int(self.model_a.n_shells+self.model_b.n_shells)))
+
+        for i, species in enumerate(self.parameters["chemical_species"]):
+            comp_tot[i, :] = np.append(self.model_a.elements[i],self.model_b.elements[i])
+
+        # Define a passive scalar, 1 for shells from primary, 0 for secondary
+        ps = np.append(np.full(self.model_a.n_shells, 1), np.full(self.model_b.n_shells, 0))
+
+        # Merge stars using entropy sorting
+        dm_res, s_res, t_res, rho_res, ele, ps_res = new_star(dm, s_tot, T, Rho, comp_tot, ps)
+        m_res = np.cumsum(dm_res) # Convert sorted dm back into proper mass coordinate
+
+        if self.parameters["output_raw"]:
+            write_merger(m_res, dm_res, ele, self.parameters["chemical_species"], ps_res, rho_res, s_res, compute_mu(ele, self.model_a.am), os.path.join(self.parameters["output_dir"], "Ssorted_merger_raw.txt"))
+            if self.parameters["relaxation_profiles"]:
+                write_composition_profile(m_res, ele, os.path.join(self.parameters["output_dir"], "DRaMA_merger_composition_raw.dat"))
+                write_entropy_profile(m_res, s_res, os.path.join(self.parameters["output_dir"], "DRaMA_merger_entropy_raw.dat"))
+
+        if self.parameters["enable_remeshing"]:
+            print("Remeshing ...")
+            mean_mu = compute_mu(ele, self.model_a.am)
+            m_resr, dmr, eler, psr, rho_resr, s_resr, mu_resr = mloss_remesh(dm_res, ele, ele[np.argwhere(np.array(self.parameters["chemical_species"]) == "h1")[0][0]], mean_mu, ps_res, rho_res, s_res, self.parameters["remeshing_shells"], self.parameters["mass_loss_fraction"], self.model_a.am)
+            # Write remeshed model
+            write_merger(m_resr, dmr, eler, self.parameters["chemical_species"], psr, rho_resr, s_resr, mu_resr, os.path.join(self.parameters["output_dir"], "Ssorted_merger_remeshed.txt"))
+            print("Done!")
+            if self.parameters["relaxation_profiles"]:
+                write_composition_profile(m_resr, eler, os.path.join(self.parameters["output_dir"], "Ssorted_merger_composition_r.dat"))
+                write_entropy_profile(m_resr, s_resr, os.path.join(self.parameters["output_dir"], "Ssorted_merger_entropy_r.dat"))
+
+        print("Entropy Sorting merger done.")
+    
 def main():
     """
     Main function to be called when running the script from the terminal.
