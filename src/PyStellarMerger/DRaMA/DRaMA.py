@@ -54,6 +54,7 @@ def survivor_pressure_scale_height(
     hp_cm = pressure_1 / (np.maximum(density_1, floor_density_cgs) * g_cgs)
     hp_rsun = hp_cm / R_SUN_CM
 
+    # Replace NaN/Inf values with the first valid scale height and clip negatives to zero.
     finite = np.isfinite(hp_rsun) & (hp_rsun >= 0.0)
     if not np.any(finite):
         raise ValueError("Failed to compute a finite pressure scale height profile.")
@@ -67,14 +68,14 @@ def tidal_disruption_radius_innerX(mass_1, logR_1, mass_2, logR_2, X):
     """
     Computes the tidal disruption radius for the mass shell of star 2 (disrupted star) closest at mass coordinate X.
     """
-    M1_final = mass_1[0]
+    M1_final = mass_1[0] # outermost shell -> total mass
     R1_final = 10 ** logR_1[0]
     M2_final = mass_2[0]
     
     r_1 = 10 ** logR_1
     r_2 = 10 ** logR_2
 
-    idx2_max = np.where(mass_2 >= X * M2_final)[0][-1]
+    idx2_max = np.where(mass_2 >= X * M2_final)[0][-1] # outermost shell index
 
     R2_X = r_2[idx2_max]
 
